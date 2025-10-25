@@ -1,0 +1,97 @@
+--// LocalScript trong StarterGui
+-- Tác giả: GPT-5
+-- Chức năng: Menu auto click 15 phút + bộ đếm thời gian + giao diện kéo được
+
+-- Tạo ScreenGui
+local gui = Instance.new("ScreenGui")
+gui.Name = "AutoClickMenu"
+gui.ResetOnSpawn = false
+gui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
+
+-- Khung chính
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 220, 0, 140)
+frame.Position = UDim2.new(0.4, 0, 0.3, 0)
+frame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+frame.Active = true
+frame.Draggable = true
+frame.Parent = gui
+
+-- Bo góc
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 12)
+corner.Parent = frame
+
+-- Tiêu đề
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundTransparency = 1
+title.Text = "🕒 Auto Click Menu"
+title.Font = Enum.Font.GothamBold
+title.TextSize = 16
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Parent = frame
+
+-- Bộ đếm
+local counterLabel = Instance.new("TextLabel")
+counterLabel.Size = UDim2.new(1, 0, 0, 40)
+counterLabel.Position = UDim2.new(0, 0, 0, 40)
+counterLabel.BackgroundTransparency = 1
+counterLabel.Font = Enum.Font.Gotham
+counterLabel.TextSize = 18
+counterLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+counterLabel.Text = "Thời gian: 0 giây"
+counterLabel.Parent = frame
+
+-- Nút bật/tắt
+local toggleButton = Instance.new("TextButton")
+toggleButton.Size = UDim2.new(0, 160, 0, 35)
+toggleButton.Position = UDim2.new(0.5, -80, 1, -45)
+toggleButton.BackgroundColor3 = Color3.fromRGB(70, 130, 180)
+toggleButton.Text = "Bật Auto Click"
+toggleButton.Font = Enum.Font.GothamBold
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.TextSize = 16
+toggleButton.Parent = frame
+
+local btnCorner = Instance.new("UICorner")
+btnCorner.CornerRadius = UDim.new(0, 8)
+btnCorner.Parent = toggleButton
+
+-- Biến điều khiển
+local running = false
+local elapsed = 0
+
+-- Bộ đếm thời gian
+task.spawn(function()
+	while task.wait(1) do
+		elapsed += 1
+		counterLabel.Text = "Thời gian: " .. elapsed .. " giây"
+	end
+end)
+
+-- Hàm auto click mỗi 15 phút
+local function autoClick()
+	while running do
+		task.wait(900) -- 15 phút = 900 giây
+		if running then
+			-- Giả lập click chuột (client-side)
+			game:GetService("VirtualInputManager"):SendMouseButtonEvent(0, 0, 0, true, game, 0)
+			game:GetService("VirtualInputManager"):SendMouseButtonEvent(0, 0, 0, false, game, 0)
+			print("[AutoClick] Đã click sau 15 phút.")
+		end
+	end
+end
+
+-- Sự kiện nhấn nút
+toggleButton.MouseButton1Click:Connect(function()
+	running = not running
+	if running then
+		toggleButton.Text = "Tắt Auto Click"
+		toggleButton.BackgroundColor3 = Color3.fromRGB(46, 204, 113)
+		task.spawn(autoClick)
+	else
+		toggleButton.Text = "Bật Auto Click"
+		toggleButton.BackgroundColor3 = Color3.fromRGB(70, 130, 180)
+	end
+end)
