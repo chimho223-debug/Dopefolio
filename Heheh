@@ -1,0 +1,431 @@
+-- Rayfield cosmetic toolset (LocalScript)
+-- Dán vào StarterPlayerScripts
+-- Lưu ý: các thay đổi chỉ là client-side (hình ảnh/âm thanh/camera). Tránh thay đổi giá trị server-side.
+
+-- === CẤU HÌNH TẢI RAYFIELD ===
+local success, Rayfield = pcall(function()
+    return loadstring(game:HttpGet("https://raw.githubusercontent.com/shlexware/Rayfield/main/source.lua"))()
+end)
+if not success or not Rayfield then
+    warn("Không thể tải Rayfield. Kiểm tra URL hoặc kết nối.")
+    return
+end
+
+-- === CÁC THIẾT LẬP CHUNG ===
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local StarterGui = game:GetService("StarterGui")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- Tạo ScreenGui chứa effect UI (độc lập với Rayfield)
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "CosmeticEffects"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Helper: tween utility
+local function tween(obj, props, info)
+    info = info or TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local t = TweenService:Create(obj, info, props)
+    t:Play()
+    return t
+end
+
+-- === UI Rayfield ===
+local Window = Rayfield:CreateWindow({
+    Name = "Cosmetic Toolkit",
+    LoadingTitle = "Cosmetic Toolkit",
+    LoadingSubtitle = "Rayfield GUI",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = nil, -- local
+        FileName = "cosmetic_toolkit_config"
+    },
+    Discord = {
+        Enabled = false
+    }
+})
+
+local Tab = Window:CreateTab("Effects & Animations", 4483362458) -- icon id optional
+local SectionMain = Tab:CreateSection("Main Controls")
+
+-- === STATE / OBJECTS FOR EFFECTS ===
+local state = {
+    fovTarget = 70,
+    fovTweening = false,
+    cameraBobOn = false,
+    bobAmplitude = 0.3,
+    bobSpeed = 2,
+    emotePlaying = false,
+    nightVisionOn = false,
+    blurOn = false,
+    orbitOn = false,
+    orbitRate = 30
+}
+
+-- Create post-processing objects (ColorCorrection, Blur)
+local cc = Instance.new("ColorCorrectionEffect")
+cc.Parent = Camera
+cc.Enabled = false
+cc.Name = "CosmeticColorCorrection"
+
+local blur = Instance.new("BlurEffect")
+blur.Parent = Camera
+blur.Size = 0
+blur.Name = "CosmeticBlur"
+
+-- Container for particle/sound objects
+local effectFolder = Instance.new("Folder", Camera)
+effectFolder.Name = "CosmeticEffectFolder"
+
+-- Utility: play local sound attached to camera
+local function playLocalSound(id, volume, pitch, fadeTime)
+    local s = Instance.new("Sound")
+    s.SoundId = id
+    s.Volume = 0
+    s.PlaybackSpeed = pitch or 1
+    s.Parent = Camera
+    s:Play()
+    tween(s, {Volume = volume or 1}, TweenInfo.new(fadeTime or 0.6))
+    -- auto cleanup
+    spawn(function()
+        wait(10)
+        if s and s.Parent then
+            tween(s, {Volume = 0}, TweenInfo.new(0.6))
+            wait(0.7)
+            s:Destroy()
+        end
+    end)
+end
+
+-- === 1) FOV TWEEN (slider + button) ===
+local fovSlider = Tab:CreateSlider({
+    Name = "Camera FOV",
+    Range = {10, 120},
+    Increment = 1,
+    Suffix = "°",
+    CurrentValue = 70,
+    Flag = "fov_slider",
+    Callback = function(val)
+        state.fovTarget = val
+        if not state.fovTweening then
+            state.fovTweening = true
+            local info = TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            local tweenObj = TweenService:Create(Camera, info, {FieldOfView = val})
+            tweenObj:Play()
+            tweenObj.Completed:Wait()
+            state.fovTweening = false
+        else
+            -- direct set if tween busy
+            Camera.FieldOfView = val
+        end
+    end
+})
+
+Tab:CreateButton({
+    Name = "Reset FOV",
+    Callback = function()
+        fovSlider:Update(70)
+        Camera.FieldOfView = 70
+    end
+})
+
+-- === 2) CAMERA BOB TOGGLE ===
+Tab:CreateToggle({
+    Name = "Camera Bob",
+    CurrentValue = false,
+    Flag = "camera_bob",
+    Callback = function(v)
+        state.cameraBobOn = v
+    end
+})
+
+Tab:CreateSlider({
+    Name = "Bob Amplitude",
+    Range = {0, 2},
+    Increment = 0.1,
+    CurrentValue = 0.3,
+    Callback = function(val) state.bobAmplitude = val end
+})
+
+Tab:CreateSlider({
+    Name = "Bob Speed",
+    Range = {0.1, 8},
+    Increment = 0.1,
+    CurrentValue = 2,
+    Callback = function(val) state.bobSpeed = val end
+})
+
+-- Bob implementation (RenderStepped)
+local bobTick = 0
+RunService:BindToRenderStep("CameraBobStep", Enum.RenderPriority.Camera.Value + 1, function(dt)
+    if state.cameraBobOn then
+        bobTick = bobTick + dt * state.bobSpeed
+        local amp = state.bobAmplitude
+        local ox = math.sin(bobTick) * amp
+        local oy = math.cos(bobTick * 0.9) * amp * 0.6
+        local camCFrame = Camera.CFrame
+        Camera.CFrame = camCFrame * CFrame.new(ox, oy, 0)
+    end
+end)
+
+-- === 3) PLAY EMOTE (Animation) ===
+local emoteAnimations = {
+    ["Wave"] = "rbxassetid://507771019", -- sample short emote anim ids (replace with valid ones)
+    ["Cheer"] = "rbxassetid://154859198", 
+    ["Point"] = "rbxassetid://251019695"
+}
+local emoteDropdown = Tab:CreateDropdown({
+    Name = "Choose Emote",
+    Options = (function()
+        local t = {}
+        for k,_ in pairs(emoteAnimations) do table.insert(t, k) end
+        return t
+    end)(),
+    CurrentOption = nil,
+    Flag = "emote_choice",
+    Callback = function(option) end
+})
+
+Tab:CreateButton({
+    Name = "Play Emote",
+    Callback = function()
+        if state.emotePlaying then return end
+        local choice = emoteDropdown:GetValue() or emoteDropdown.Options[1]
+        if not choice then return end
+        local animId = emoteAnimations[choice]
+        local char = LocalPlayer.Character
+        if not char then return end
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if not humanoid then return end
+
+        -- Create animation
+        local anim = Instance.new("Animation")
+        anim.AnimationId = animId
+        local track = humanoid:LoadAnimation(anim)
+        state.emotePlaying = true
+
+        -- UI feedback: small tweened label
+        local label = Instance.new("TextLabel", screenGui)
+        label.Size = UDim2.new(0.3,0,0.06,0)
+        label.Position = UDim2.new(0.35,0,0.02,0)
+        label.Text = "Playing: "..choice
+        label.TextScaled = true
+        label.BackgroundTransparency = 0.4
+        label.BackgroundColor3 = Color3.fromRGB(30,30,30)
+        label.TextColor3 = Color3.new(1,1,1)
+        label.BorderSizePixel = 0
+        label.Name = "EmoteLabel"
+        label.AnchorPoint = Vector2.new(0,0)
+        label.ClipsDescendants = true
+        tween(label, {Position = UDim2.new(0.35,0,0.02,0), BackgroundTransparency = 0.2}, TweenInfo.new(0.35))
+
+        -- Play
+        track:Play()
+        track.Stopped:Wait()
+
+        -- cleanup
+        tween(label, {BackgroundTransparency = 0.8, Position = UDim2.new(0.35,0,-0.1,0)}, TweenInfo.new(0.35))
+        wait(0.4)
+        label:Destroy()
+        state.emotePlaying = false
+    end
+})
+
+-- === 4) PARTICLE BURST (local, camera anchored) ===
+Tab:CreateButton({
+    Name = "Particle Burst",
+    Callback = function()
+        -- Create particle emitter attached to a small part parented to camera
+        local ppart = Instance.new("Part")
+        ppart.Size = Vector3.new(0.2,0.2,0.2)
+        ppart.Anchored = true
+        ppart.CanCollide = false
+        ppart.Transparency = 1
+        ppart.Parent = effectFolder
+        local weld = Instance.new("WeldConstraint", ppart)
+        ppart.CFrame = Camera.CFrame * CFrame.new(0,0,-2)
+
+        -- keep position with camera
+        local conn
+        conn = RunService.RenderStepped:Connect(function()
+            if ppart.Parent then
+                ppart.CFrame = Camera.CFrame * CFrame.new(0,0,-2)
+            else
+                conn:Disconnect()
+            end
+        end)
+
+        local emitter = Instance.new("ParticleEmitter", ppart)
+        emitter.Speed = NumberRange.new(4,8)
+        emitter.Lifetime = NumberRange.new(0.6,1.2)
+        emitter.Rate = 0
+        emitter.Rotation = NumberRange.new(0,360)
+        emitter.RotSpeed = NumberRange.new(-180,180)
+        emitter.Size = NumberSequence.new({NumberSequenceKeypoint.new(0,0.6), NumberSequenceKeypoint.new(1,0)})
+        emitter.Texture = "rbxassetid://243660481" -- generic spark (replace if desired)
+        emitter.EmissionDirection = Enum.NormalId.Front
+        emitter.SpreadAngle = Vector2.new(180,180)
+        emitter.Parent = ppart
+
+        -- burst
+        for i=1,20 do
+            emitter:Emit(1)
+            wait(0.01)
+        end
+
+        -- cleanup slowly
+        wait(1.5)
+        ppart:Destroy()
+    end
+})
+
+-- === 5) NIGHT VISION (ColorCorrection + Blur) ===
+Tab:CreateToggle({
+    Name = "Night Vision",
+    CurrentValue = false,
+    Flag = "night_vision",
+    Callback = function(v)
+        state.nightVisionOn = v
+        cc.Enabled = v
+        if v then
+            cc.Brightness = 0.2
+            cc.Contrast = 0.1
+            cc.Saturation = -0.1
+            tween(blur, {Size = 6}, TweenInfo.new(0.6))
+        else
+            tween(blur, {Size = 0}, TweenInfo.new(0.6))
+            delay(0.2, function()
+                cc.Enabled = false
+            end)
+        end
+    end
+})
+
+-- === 6) BLUR PULSE ===
+Tab:CreateButton({
+    Name = "Blur Pulse",
+    Callback = function()
+        local seq = TweenInfo.new(0.35, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
+        tween(blur, {Size = 12}, seq)
+        delay(0.35, function() tween(blur, {Size = 0}, TweenInfo.new(0.5)) end)
+    end
+})
+
+-- === 7) POPUP BANNER (animated UI) ===
+Tab:CreateButton({
+    Name = "Show Banner",
+    Callback = function()
+        local frame = Instance.new("Frame", screenGui)
+        frame.AnchorPoint = Vector2.new(0.5, 0)
+        frame.Position = UDim2.new(0.5, 0, -0.2, 0)
+        frame.Size = UDim2.new(0.6, 0, 0.14, 0)
+        frame.BackgroundColor3 = Color3.fromRGB(20,20,20)
+        frame.BorderSizePixel = 0
+        frame.BackgroundTransparency = 0.18
+        local label = Instance.new("TextLabel", frame)
+        label.Size = UDim2.new(1, -20, 1, -20)
+        label.Position = UDim2.new(0, 10, 0, 10)
+        label.Text = "Hello — Cosmetic Banner!"
+        label.TextScaled = true
+        label.BackgroundTransparency = 1
+        label.TextColor3 = Color3.new(1,1,1)
+
+        -- in
+        tween(frame, {Position = UDim2.new(0.5,0,0.03,0)}, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out))
+        wait(2.2)
+        tween(frame, {Position = UDim2.new(0.5,0,-0.2,0)}, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.In))
+        wait(0.5)
+        frame:Destroy()
+    end
+})
+
+-- === 8) PLAY SOUND (local) ===
+Tab:CreateButton({
+    Name = "Play Sound",
+    Callback = function()
+        -- sample sound id (You can replace with any sound asset you own)
+        local soundId = "rbxassetid://142376088" -- short chime (example)
+        playLocalSound(soundId, 1, 1, 0.5)
+    end
+})
+
+-- === 9) CAMERA ORBIT (local, around character) ===
+Tab:CreateToggle({
+    Name = "Camera Orbit",
+    CurrentValue = false,
+    Flag = "camera_orbit",
+    Callback = function(v)
+        state.orbitOn = v
+    end
+})
+
+Tab:CreateSlider({
+    Name = "Orbit Speed (deg/s)",
+    Range = {5,120},
+    Increment = 1,
+    CurrentValue = 30,
+    Callback = function(val) state.orbitRate = val end
+})
+
+-- Orbit implementation
+local orbitAngle = 0
+RunService:BindToRenderStep("CameraOrbitStep", Enum.RenderPriority.Camera.Value + 2, function(dt)
+    if state.orbitOn then
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            local root = char.HumanoidRootPart
+            orbitAngle = (orbitAngle + state.orbitRate * dt) % 360
+            local radius = 6
+            local rad = math.rad(orbitAngle)
+            local offset = Vector3.new(math.cos(rad)*radius, 2, math.sin(rad)*radius)
+            local target = root.Position + Vector3.new(0,1.5,0)
+            Camera.CFrame = CFrame.new(target + offset, target)
+        end
+    end
+end)
+
+-- === 10) QUICK HIDE UI (hide Rayfield window + custom GUI) ===
+Tab:CreateKeybind({
+    Name = "Quick Hide UI (Toggle)",
+    CurrentKeybind = "LeftAlt",
+    Mode = "Toggle",
+    Flag = "quick_hide",
+    Callback = function()
+        local gui = Window -- Rayfield window object
+        -- Rayfield windows don't expose direct instance easily; use StarterGui:SetCoreGuiEnabled as fallback
+        -- Simpler: toggle our own screenGui visibility and set Rayfield visible flag
+        screenGui.Enabled = not screenGui.Enabled
+        -- Rayfield has utility to toggle visibility
+        if Rayfield and Rayfield:ToggleVisibility then
+            Rayfield:ToggleVisibility() -- toggle the Rayfield UI if available
+        else
+            -- fallback: notify
+            StarterGui:SetCore("SendNotification", {
+                Title = "UI Toggle",
+                Text = "Toggled custom UI visibility",
+                Duration = 2
+            })
+        end
+    end
+})
+
+-- Small note: if Rayfield provides API to hide/show, above uses it when available.
+
+-- === CLEANUP ON UNLOAD ===
+-- When player leaves, destroy created objects
+LocalPlayer.AncestryChanged:Connect(function(_, parent)
+    if not parent then
+        if screenGui and screenGui.Parent then screenGui:Destroy() end
+        if effectFolder and effectFolder.Parent then effectFolder:Destroy() end
+    end
+end)
+
+-- Optional: initial nice intro banner
+StarterGui:SetCore("SendNotification", {
+    Title = "Cosmetic Toolkit",
+    Text = "Loaded — client-only effects. Use responsibly.",
+    Duration = 3
+})
