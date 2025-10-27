@@ -1,0 +1,114 @@
+-- Rayfield_X.meo62_100_functions.lua
+
+-- Full demo Rayfield script (100 "functions" split in 2 tabs) -- SAFE demo only: NO exploits, NO game-altering features. -- Each button/toggle produces local GUI feedback (notifications, local visuals, toggles) so you can test and later replace actions with real game logic if you choose. -- Use: put this as a LocalScript. You can also host it raw on GitHub and load with: -- loadstring(game:HttpGet("https://raw.githubusercontent.com/yourname/yourrepo/main/Rayfield_X.meo62_100_functions.lua"))()
+
+-- Try to load Rayfield UI lib. If it fails, fallback to a minimal contained UI. local success, Rayfield = pcall(function() return loadstring(game:HttpGet("https://raw.githubusercontent.com/venix-rbx/Rayfield/main/source"))() end)
+
+-- Fallback minimal UI (very small) if Rayfield not available if not success or typeof(Rayfield) ~= "table" then warn("Rayfield load failed. Using fallback UI.") Rayfield = {} do local library = Instance.new("ScreenGui") library.Name = "Xmeo62_Fallback_UI" library.ResetOnSpawn = false library.Parent = game:GetService("CoreGui")
+
+local window = Instance.new("Frame")
+    window.Name = "Window"
+    window.Size = UDim2.new(0, 540, 0, 380)
+    window.Position = UDim2.new(0.5, -270, 0.5, -190)
+    window.AnchorPoint = Vector2.new(0.5, 0.5)
+    window.BackgroundColor3 = Color3.fromRGB(34, 34, 34)
+    window.Visible = true
+    window.Parent = library
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1,0,0,32)
+    title.BackgroundTransparency = 1
+    title.Text = "X.meo62 - Demo Rayfield"
+    title.TextColor3 = Color3.fromRGB(255,255,255)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 18
+    title.Parent = window
+
+    -- simple open/close animation functionality
+    function Rayfield.CreateWindow(opts)
+        local win = window
+        local tabs = {}
+        function tabs:CreateTab(tabname)
+            local t = {}
+            t.Frame = Instance.new("ScrollingFrame")
+            t.Frame.Size = UDim2.new(1, -12, 1, -48)
+            t.Frame.Position = UDim2.new(0,6,0,40)
+            t.Frame.CanvasSize = UDim2.new(0,0)
+            t.Frame.ScrollBarThickness = 6
+            t.Frame.BackgroundTransparency = 1
+            t.Frame.Parent = win
+            t.Frame.Visible = false
+            t.Name = tabname
+            function t:CreateButton(opts)
+                local btn = Instance.new("TextButton")
+                btn.Size = UDim2.new(1, -12, 0, 28)
+                btn.Position = UDim2.new(0,6,0,6 + (#t.Frame:GetChildren()-1)*34)
+                btn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+                btn.TextColor3 = Color3.fromRGB(255,255,255)
+                btn.Text = opts.Name or "Button"
+                btn.Parent = t.Frame
+                btn.MouseButton1Click:Connect(function()
+                    if opts.Callback then pcall(opts.Callback) end
+                end)
+                -- update canvas size
+                wait()
+                local highest = 0
+                for i,v in pairs(t.Frame:GetChildren()) do
+                    if v:IsA("GuiObject") then
+                        highest = math.max(highest, v.Position.Y.Offset + v.Size.Y.Offset)
+                    end
+                end
+                t.Frame.CanvasSize = UDim2.new(0,0,0,highest+12)
+                return btn
+            end
+            return t
+        end
+        -- open/close
+        win.Visible = true
+        return {Window = win, CreateTab = function(self,name) return tabs:CreateTab(name) end}
+    end
+end
+
+end
+
+-- If Rayfield loaded properly it will have a CreateWindow method. For fallback we already provided one. local Window = Rayfield:CreateWindow({Name = "X.meo62 - 100 chức năng (Demo)", LoadingTitle = "X.meo62 Loader", LoadingSubtitle = "Demo mode (safe)"})
+
+-- Animation: implement a simple open/close animation if Rayfield has SetTheme or Window toggles local function animateOpenClose(gui) -- If Rayfield supports toggling, attempt a simple tween animation on the main frame pcall(function() local main = gui.Window or gui if typeof(main) == "table" and main.Window then main = main.Window end if main and main:IsA("Instance") then local tweenService = game:GetService("TweenService") main.Visible = true main.AnchorPoint = Vector2.new(0.5,0.5) local goal = {Position = main.Position, Size = main.Size} local origPos = main.Position main.Position = UDim2.new(0.5, 0, 0.5, 0) -- small scale pop animation main.Size = UDim2.new(0, 0, 0, 0) tweenService:Create(main, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = goal.Size}):Play() end end) end
+
+-- call animation pcall(function() animateOpenClose(Window) end)
+
+-- small helper: notif local function notify(title, text) pcall(function() if Rayfield.Notify then Rayfield:Notify({Title = title, Content = text, Duration = 4}) else -- fallback notification local player = game:GetService("Players").LocalPlayer if player then print("[Notification] ", title, text) end end end) end
+
+-- We'll create two tabs: X.meo62 (50 funcs) and "50 chức năng" (50 funcs) local tab1 = Window:CreateTab("X.meo62") -- 50 functions local tab2 = Window:CreateTab("50 chức năng") -- another 50
+
+-- To keep code tidy we will build a list of demo actions to cycle through and ensure uniqueness local demoStates = {}
+
+-- utility: create a local visual marker above player's head (purely client-side) local function spawnLocalMarker(text) local Players = game:GetService("Players") local player = Players.LocalPlayer if not player or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end local billboard = Instance.new("BillboardGui") billboard.Name = "Xmeo62_Marker" billboard.Size = UDim2.new(0, 150, 0, 40) billboard.AlwaysOnTop = true billboard.Parent = player.Character:FindFirstChild("HumanoidRootPart") local lbl = Instance.new("TextLabel") lbl.Size = UDim2.new(1,0,1,0) lbl.BackgroundTransparency = 1 lbl.Text = text lbl.TextColor3 = Color3.fromRGB(255,255,255) lbl.Font = Enum.Font.GothamBold lbl.TextScaled = true lbl.Parent = billboard delay(3, function() pcall(function() billboard:Destroy() end) end) end
+
+-- Build 50 functions for tab1 for i = 1, 50 do local name = "Func "..i -- craft a slightly different callback for each index local callback = function() demoStates[name] = not demoStates[name] spawnLocalMarker(name .. (demoStates[name] and " ON" or " OFF")) notify("X.meo62", name .. " toggled: " .. tostring(demoStates[name])) end tab1:CreateButton({Name = name, Callback = callback}) end
+
+-- Add a few special controls in tab1 to show types (toggles, sliders, dropdowns, keybinds) -- Toggle example 1..5 for t = 1,5 do local name = "Toggle Special "..t tab1:CreateButton({Name = name, Callback = function() demoStates[name] = not demoStates[name] notify("Toggle", name .. " is now " .. tostring(demoStates[name])) end}) end
+
+-- Slider-like demo (we implement via multiple buttons incrementing a value) local sliderValue = 50 tab1:CreateButton({Name = "Slider Demo - Increase", Callback = function() sliderValue = math.clamp(sliderValue + 5, 0, 100) notify("Slider", "Value now: "..sliderValue) end}) tab1:CreateButton({Name = "Slider Demo - Decrease", Callback = function() sliderValue = math.clamp(sliderValue - 5, 0, 100) notify("Slider", "Value now: "..sliderValue) end})
+
+-- Input demo tab1:CreateButton({Name = "Input Demo - Ask Text", Callback = function() local input = "demo text" notify("Input", "You entered: "..input) end})
+
+-- Keybind demo: toggle a small GUI on key press local toggleGui = Instance.new("ScreenGui") toggleGui.Name = "Xmeo62_ToggleGui" toggleGui.ResetOnSpawn = false local sampleFrame = Instance.new("Frame") sampleFrame.Size = UDim2.new(0,200,0,100) sampleFrame.Position = UDim2.new(0,20,0,20) sampleFrame.BackgroundColor3 = Color3.fromRGB(60,60,60) sampleFrame.Visible = false sampleFrame.Parent = toggleGui if game:GetService("Players").LocalPlayer then toggleGui.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui") end
+
+local keybindOn = false tab1:CreateButton({Name = "Bind Toggle GUI (K)", Callback = function() keybindOn = not keybindOn notify("Keybind", "Press K to toggle small GUI. Enabled: "..tostring(keybindOn)) end})
+
+game:GetService("UserInputService").InputBegan:Connect(function(inp, gameProcessed) if gameProcessed then return end if not keybindOn then return end if inp.KeyCode == Enum.KeyCode.K then sampleFrame.Visible = not sampleFrame.Visible notify("Keybind", "Small GUI visible: "..tostring(sampleFrame.Visible)) end end)
+
+-- Build 50 functions for tab2 with different playful names/actions (still SAFE) local playfulActions = { "Rung Màn Hình", "Xoay Nhân Vật", "Đổi Màu UI", "Fake Chat", "Mini Flash", "Blink Effect", "Spawn Confetti", "Pop Toast", "Rainbow Background", "Make It Rain (visual)", "Mirror Camera", "Camera Jiggle", "Emoji Shower", "Random Tip", "Ping Player", "Show Coordinates", "Show FPS (sim)", "Toggle Borders", "Grow Title", "Shrink Title", "Bounce Title", "Flip UI", "Slide Out", "Slide In", "Pulse", "Sparkles (local)", "Blur Pulse", "Day/Night Sim", "Mini Radar (fake)", "Label Above NPC", "Local Trail", "Ghost Mode (visual)", "Invert Colors", "Noise Overlay", "Typewriter Title", "Toast Sequence", "Wave Text", "Shimmer Button", "Explode Confetti", "Floating Text", "Toast Multi", "Countdown 10s", "Dice Roll", "Coin Flip", "Spin Screen (mild)", "Heartbeat Pulse", "Zoom In Title", "Zoom Out Title", "Color Cycle", "Gradient Shift", "Wiggle Buttons", "Random Font" }
+
+-- Ensure we have 50 names; if less, repeat with suffix while #playfulActions < 50 do table.insert(playfulActions, "Playful "..(#playfulActions+1)) end
+
+for i = 1, 50 do local name = playfulActions[i] tab2:CreateButton({Name = name, Callback = function() -- vary effects: some spawn labels, some change GUI color, others just notify local kind = (i % 5) if kind == 1 then -- spawn local marker spawnLocalMarker(name) notify("Playful", name .. " → marker spawned") elseif kind == 2 then -- toggle sampleFrame color sampleFrame.BackgroundColor3 = Color3.fromHSV((tick() % 10) / 10, 0.7, 0.6) notify("Playful", name .. " → changed small GUI color") elseif kind == 3 then -- show multiple quick notifications notify("Playful", name .. " → one!") wait(0.2) notify("Playful", name .. " → two!") elseif kind == 4 then -- create a temporary textlabel on screen center local player = game:GetService("Players").LocalPlayer if player and player:FindFirstChild("PlayerGui") then local sg = player.PlayerGui local temp = Instance.new("TextLabel") temp.Size = UDim2.new(0,300,0,60) temp.Position = UDim2.new(0.5,-150,0.2,0) temp.BackgroundTransparency = 0.4 temp.BackgroundColor3 = Color3.fromRGB(0,0,0) temp.TextColor3 = Color3.fromRGB(255,255,255) temp.Text = name temp.TextScaled = true temp.Parent = sg delay(2, function() pcall(function() temp:Destroy() end) end) end notify("Playful", name .. " → shown center text") else -- default notify notify("Playful", name .. " executed") end end}) end
+
+-- Add a footer area with a few utility demo functions local function makeFooterButton(tab, name, fn) tab:CreateButton({Name = name, Callback = fn}) end
+
+makeFooterButton(tab1, "Save Config (demo)", function() notify("Config", "Config saved (demo). You can replace this with real save code.") end) makeFooterButton(tab1, "Load Config (demo)", function() notify("Config", "Config loaded (demo).") end) makeFooterButton(tab2, "Export to Clipboard (demo)", function() notify("Export", "Copied demo config to clipboard (sim).") end) makeFooterButton(tab2, "Import from Clipboard (demo)", function() notify("Import", "Imported demo config (sim).") end)
+
+-- Final message: script ready notify("X.meo62 Script", "Demo UI with 100 functions created. This version is SAFE (no exploits).")
+
+-- End of file
